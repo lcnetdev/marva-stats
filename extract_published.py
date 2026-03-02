@@ -99,9 +99,16 @@ def bson_file_iter(filepath):
 
 
 def parse_date(date_str):
-    """Parse ISO date string to date object."""
-    # Handle format like '2025-11-13T15:24:31.862Z'
-    return datetime.fromisoformat(date_str.replace('Z', '+00:00')).date()
+    """Parse date string to date object.
+
+    Handles both old and new schema formats:
+    - Old: '2025-11-13T15:24:31.862Z' (ISO format)
+    - New: '2026-02-08:23:58:38' (yyyy-mm-dd:HH:MM:SS)
+    """
+    if 'T' in date_str:
+        return datetime.fromisoformat(date_str.replace('Z', '+00:00')).date()
+    # New format: '2026-02-08:23:58:38' — date is first 10 chars
+    return datetime.strptime(date_str[:10], '%Y-%m-%d').date()
 
 
 def get_last_version_content(versions):
@@ -164,14 +171,16 @@ def main():
         file_duplicates = 0
 
         for doc in bson_file_iter(filepath):
-            uri = doc.get('uri')
             index = doc.get('index', {})
             status = index.get('status')
-            modified_str = doc.get('modified')
 
             # Skip if not published
             if status != 'published':
                 continue
+
+            # Handle both old and new schemas for URI and date
+            uri = doc.get('uri') or index.get('eid')
+            modified_str = doc.get('modified') or index.get('time')
 
             # Skip if no modified date
             if not modified_str:
@@ -214,8 +223,8 @@ def main():
             # Aggregate by user and month
             records_by_user_month[user][month_key] += 1
 
-            # Get content for checks
-            content = get_last_version_content(doc.get('versions', []))
+            # Get content for checks (old schema: versions[-1].content, new schema: data)
+            content = get_last_version_content(doc.get('versions', [])) or doc.get('data')
 
             # Collect sample content for preview
             if len(sample_contents) < 3:
